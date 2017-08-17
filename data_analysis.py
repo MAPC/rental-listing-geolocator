@@ -30,22 +30,16 @@ from boto.s3.key import Key
 
 conf_perc = 0.95
 
-## ID first and then key
-credentials = open('credentials.txt').read().split(",") 
-os.environ["mapc_id"] = credentials[0]
-os.environ["mapc_key"] = credentials[1]
-
-
 
 bucket_data= 'rental-listings-data-output'
 bucket_analysis= 'rental-listings-analysis-output'
 
-fs = s3fs.S3FileSystem(anon=False,key=os.environ["mapc_id"],
-    secret=os.environ["mapc_key"])
+fs = s3fs.S3FileSystem(anon=False,key=os.environ["MAPC_access"],
+    secret=os.environ["MAPC_secret"])
 
 
-conn = boto.connect_s3(os.environ["mapc_id"],
-        os.environ["mapc_key"])
+conn = boto.connect_s3(os.environ["MAPC_access"],
+        os.environ["MAPC_secret"])
 
 
 
@@ -219,13 +213,13 @@ def hist_plot(data):
 	    stats.probplot(ln_ask, dist="norm",plot=ax2)
 
 	plt.tight_layout()
-	plt.savefig('ask_bybedroom.png')
+	plt.savefig('ask_histogram.png')
 	plt.close()
-
-	img_= 'ask_bybedroom.png'
+	print('Time Series written')
+	img_= 'ask_histogram.png'
 	mybucket = conn.get_bucket(bucket_analysis)
 	k = Key(mybucket)
-	k.key = 'charts/{}_{}_{}_ask_bybedroom.png'.format(today_.year,today_.month,today_.day)
+	k.key = 'charts/{}_{}_{}_ask_histogram.png'.format(today_.year,today_.month,today_.day)
 	k.set_contents_from_filename(img_,cb=percent_cb, num_cb=10)
 
 

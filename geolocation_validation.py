@@ -175,12 +175,12 @@ def delete_folder_files(folder):
         except Exception as e:
             print(e)
 
-# Function that queries the MApzen API to find the addresses and their lat/lon values for a given lat/lon
-def mapzen_api_repeated(mapzen_df, index):
-    api_key = os.environ['MAPC_mapozen']
+def mapzen_api_keys(mapzen_df, keys):
+    indices = mapzen_df.index.sort_values()
+    api_key = os.environ['MAPC_mapzen']
 
-    lat = mapzen_pad_mapper.loc[index].latitude
-    lon = mapzen_pad_mapper.loc[index].longitude
+    lat = keys[0]
+    lon = keys[1]
     url = 'https://search.mapzen.com/v1/reverse?point.lat='+str(lon)+'&point.lon='+str(lat)+'&size=3&api_key=' + api_key
 
     # GET
@@ -207,9 +207,14 @@ def mapzen_api_repeated(mapzen_df, index):
         confidence = address_dict['properties']['confidence']
     else: accuracy = None 
 
+    if len(indices) == 0:
+        curr_index = 0
+    else: 
+        curr_index = indices[-1] + 1
+    mapzen_df.loc[curr_index] = [addr_num, base, community, address_dict['geometry']['coordinates'][0],
+                           address_dict['geometry']['coordinates'][1], joint_addresses, confidence]
 
-    mapzen_df.loc[index] = [addr_num, base, community, address_dict['geometry']['coordinates'][0],
-                           address_dict['geometry']['coordinates'][1], joint_addresses, confidence, lat, lon]
+    return True
 
 
 # filelist = [ f for f in os.listdir(".") if f.endswith(".bak") ]
@@ -310,10 +315,11 @@ num_of_chunks = [file for file in os.listdir(worker_path) if file.endswith(".csv
 # loop through all the files to execute the regex functions
 for i in range(len(num_of_chunks)):
     if i < 2:
-        path = worker_path + str(i) + '.csv'
-        output = worker_proc + str(i) + '.csv'
-        worker(path, street_names_merge, strip_address, strip_st_type, regex_st_types, output)
-
+        try:
+            path = worker_path + str(i) + '.csv'
+            output = worker_proc + str(i) + '.csv'
+            worker(path, street_names_merge, strip_address, strip_st_type, regex_st_types, output)
+        except: pass
 
 # Opens all the processed files, and creaes a larger series
 worker_proc = 'Data/worker_processed/'
@@ -420,4 +426,164 @@ mapzen_pad_mapper = pad_mapper_clean[(pad_mapper_clean.fwd_geolocated == False)&
 print pad_mapper_clean
 # Create an empty dataframe to hold the values to be queried from the Mapzen API
 mapzen_df = pd.DataFrame(columns=['ADDR_NUM_mapozen', 'BASE_mapzen', 'COMMUNITY_mapzen', 'latitude', 'longitude', 'joint_addresses_mapzen','mapzen_confidence'])
+
+
+# Iterate through the indices that are left, and geocode them with the mapzen API
+for index in mapzen_pad_mapper.index:
+    print index
+    try:
+        mapzen_api(mapzen_df, index)
+    except: pass
+
+
+# Add flags for the listings that were geocoded with Mapzen
+pad_mapper_clean['mapzen_geolocated'] = False
+pad_mapper_clean.loc[mapzen_df.index, 'mapzen_geolocated'] = True
+# Join the listing data with the Mapzen geoded entries
+pad_mapper_clean = pad_mapper_clean.join(mapzen_df, rsuffix='_mapzen_geocode')
+pad_mapper_clean = pad_mapper_clean[~pad_mapper_clean.index.duplicated(keep='first')]
+
+
+# Transform numeric values into strings for aggregation
+pad_mapper_clean['latitude_mapzen_geocode'] = pad_mapper_clean['latitude_mapzen_geocode'].apply(val_to_agg)
+pad_mapper_clean['longitude_mapzen_geocode'] = pad_mapper_clean['longitude_mapzen_geocode'].apply(val_to_agg)
+pad_mapper_clean['ADDR_NUM_mapozen'] = pad_mapper_clean['ADDR_NUM_mapozen'].apply(val_to_agg)
+
+
+# Define columns to be dropped later
+drop_mapzen = ['latitude_mapzen_geocode','longitude_mapzen_geocode', 'ADDR_NUM_mapozen',
+              'BASE_mapzen', 'COMMUNITY_mapzen', 'joint_addresses_mapzen']
+
+# Merge the mapzen columns with the forward and backward geolocated values
+pad_mapper_clean['latitude_merge'] = pad_mapper_clean[['latitude_merge', 'latitude_mapzen_geocode']].fillna('').sum(axis=1) 
+pad_mapper_clean['longitude_merge'] = pad_mapper_clean[['longitude_merge', 'longitude_mapzen_geocode']].fillna('').sum(axis=1) 
+pad_mapper_clean['ADDR_NUM_merge'] = pad_mapper_clean[['ADDR_NUM_merge', 'ADDR_NUM_mapozen']].fillna('').sum(axis=1) 
+pad_mapper_clean['BASE_merge'] = pad_mapper_clean[['BASE_merge', 'BASE_mapzen']].fillna('').sum(axis=1) 
+pad_mapper_clean['COMMUNITY_Merge'] = pad_mapper_clean[['COMMUNITY_Merge', 'COMMUNITY_mapzen']].fillna('').sum(axis=1) 
+pad_mapper_clean['joint_addresses_merge'] = pad_mapper_clean[['joint_addresses_merge', 'joint_addresses_mapzen']].fillna('').sum(axis=1) ####
+
+
+# Drop repeated columns
+pad_mapper_clean = pad_mapper_clean.drop(drop_mapzen, axis=1)
+
+
+#################################################
+# Here we start processing the Craigslist listings
+craigslist = rental_df.loc[(rental_df['source_id'] == 1) & (rental_df['longitude']!=0)]
+
+# We group the listings by lat and lon to then tag the ones that are over repeated
+craigs_grouped = craigslist.groupby(['latitude', 'longitude'])
+# We set a threshold of 200 hits of the same lat/lon
+filtered_indices = craigs_grouped.filter(lambda x: len(x)>200).index
+
+# Tag the repeated listings
+craigslist['repeated_location'] = False
+craigslist.loc[filtered_indices, 'repeated_location'] = True
+
+
+# We use the same tree previously generated and query for the nearest neighbors
+distance, indices = tree.query(craigslist[join_cols])
+
+# Here we create a new DF and find the listings closer than 20 mts to the address points
+d = {'distance': distance * 111325, 'indices': indices}
+dist_df = pd.DataFrame(data=d, index=craigslist.index)
+# dist_df['indices'] = dist_df['indices'].astype('int')
+dist_df.loc[dist_df['distance'] > 20, 'indices'] = None
+dist_df = dist_df.dropna()
+dist_df['indices'] = dist_df['indices'].astype('int')
+
+# we create a new DF with the results of the geocoding process 
+reverse_geocode = geolocations.iloc[dist_df['indices']]
+reverse_geocode = reverse_geocode.set_index(dist_df.index)[['ADDR_NUM', 'BASE', 'COMMUNITY', 'latitude', 'longitude', 'joint_addresses']]
+
+# we join the new reverse geocoded df with the larger DF
+craigslist['rev_geolocated'] = False
+craigslist.loc[reverse_geocode.index, 'rev_geolocated'] = True
+craigslist = craigslist.join(reverse_geocode, rsuffix='_rev_geocode')
+
+# We eliminate duplicate entries 
+craigslist = craigslist[~craigslist.index.duplicated(keep='first')]
+craigslist = craigslist.loc[:,~craigslist.columns.duplicated()]
+
+# The remaining entries will be geocoded through mapzen
+mapzen_craigslist = craigslist[craigslist.rev_geolocated==False]
+
+# We group all the listings by lat lon to reduce the number of calls to the API
+mapzen_grouped = mapzen_craigslist.groupby(['latitude', 'longitude'])
+filtered_indices_mz = mapzen_grouped.filter(lambda x: len(x)==1).index
+
+# We get the lat lon values of the groups
+grouped_keys = mapzen_grouped.groups.keys()
+
+
+# We create an empty DF to hold the query results
+mapzen_df = pd.DataFrame(columns=['ADDR_NUM', 'BASE', 'COMMUNITY', 'latitude', 'longitude', 'joint_addresses','mapzen_confidence', 'original_latitude', 'original_longitude'])
+
+# # We query the Mapzen API
+for key in grouped_keys:
+    print key
+    try: mapzen_api_keys(mapzen_df, key)
+    except: pass
+
+# We set the index as a md index based on the lat lon
+mapzen_multi_index = mapzen_df.set_index(['latitude', 'longitude'], drop = False, inplace=False)
+
+# We add the original lat lon as a column, but first we parse them
+lat_lon = [[],[]]
+for i in grouped_keys:
+    lat_lon[0].append(i[0])
+    lat_lon[1].append(i[1])
+
+mapzen_multi_index_rename = mapzen_multi_index.rename(columns={'latitude': 'latitude_mapzen', 'longitude': 'longitude_mapzen'})
+mapzen_multi_index_rename['latitude'] = lat_lon[0]
+mapzen_multi_index_rename['longitude'] = lat_lon[1]
+
+# We merge the table with non duplicate lat lon values with the original craigslist-mapzen dataset
+mapzen_craigslist_merge = pd.merge(mapzen_craigslist, mapzen_multi_index_rename, how='left', on=['latitude', 'longitude'])
+
+# We re-assign the indices
+mapzen_craigslist_merge.index = mapzen_craigslist.index
+mapzen_craigslist_clean = mapzen_craigslist_merge[['ADDR_NUM_y', 'BASE_y', 'COMMUNITY_y', 'latitude_mapzen', 'longitude_mapzen', 'joint_addresses_y', 'mapzen_confidence']]
+
+# We flag the new geocoded listings as geolocated by mapzen
+craigslist['mapzen_geolocated'] = False
+craigslist.loc[mapzen_craigslist_clean.index, 'mapzen_geolocated'] = True
+craigslist_map = craigslist.join(mapzen_craigslist_clean, rsuffix='_mapzen_geocode')
+
+# Remove duplicates
+craigslist_map = craigslist_map[~craigslist.index.duplicated(keep='first')]
+craigslist_map = craigslist_map.loc[:,~craigslist_map.columns.duplicated()]
+
+# We translate numeric values to stings to easily merge columns
+craigslist_map['latitude_rev_geocode'] = craigslist_map['latitude_rev_geocode'].apply(val_to_agg)
+craigslist_map['longitude_rev_geocode'] = craigslist_map['longitude_rev_geocode'].apply(val_to_agg)
+craigslist_map['ADDR_NUM'] = craigslist_map['ADDR_NUM'].apply(val_to_agg)
+
+craigslist_map['latitude_mapzen'] = craigslist_map['latitude_mapzen'].apply(val_to_agg)
+craigslist_map['longitude_mapzen'] = craigslist_map['longitude_mapzen'].apply(val_to_agg)
+craigslist_map['ADDR_NUM_y'] = craigslist_map['ADDR_NUM_y'].apply(val_to_agg)
+
+# We merge the reverse geolocated and mapzen geolocated columns
+craigslist_map['COMMUNITY_Merge'] = craigslist_map[['COMMUNITY', 'COMMUNITY_y']].fillna('').sum(axis=1)
+craigslist_map['ADDR_NUM_merge'] = craigslist_map[['ADDR_NUM', 'ADDR_NUM_y',]].fillna('').sum(axis=1) ####
+craigslist_map['BASE_merge'] = craigslist_map[['BASE', 'BASE_y']].fillna('').sum(axis=1)
+craigslist_map['latitude_merge'] = craigslist_map[['latitude_mapzen', 'latitude_rev_geocode']].fillna('').sum(axis=1) ####
+craigslist_map['longitude_merge'] = craigslist_map[['longitude_mapzen', 'longitude_rev_geocode']].fillna('').sum(axis=1) #####
+craigslist_map['joint_addresses_merge'] = craigslist_map[['joint_addresses', 'joint_addresses_y']].fillna('').sum(axis=1)
+
+# We eliminate extra columns 
+drop_columns = ['COMMUNITY_y','COMMUNITY', 
+                'ADDR_NUM_y','ADDR_NUM', 
+                'BASE_y','BASE',
+                'latitude_rev_geocode','latitude_mapzen',
+                'longitude_rev_geocode','longitude_mapzen',
+                'joint_addresses_y','joint_addresses']
+craigslist_clean = craigslist_map.drop(drop_columns, axis=1)
+
+# Merge padmapper and craigslist processed listings 
+processed_listings = pd.concat([padmapper_clean, craigslist_clean])
+
+#################============================#######################################
+# We finally output it ... and we should upload to S3........
+processed_listings.to_csv(str(datetime.date.today())+'_processed_listings.csv')
 
