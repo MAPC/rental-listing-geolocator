@@ -224,7 +224,7 @@ point_path = os.environ['point_path'] # 'Points'
 csv_path = os.environ['csv_path'] # 'CSV'
 worker_proc = os.environ['worker_proc'] # 'Data/worker_processed/'
 output_path = os.environ['output_path'] # 'Data/Output'
-MAPC_mapzen = 'mapzen-znUkgUk'#os.environ['MAPC_mapzen'] # 
+MAPC_mapzen = os.environ['MAPC_mapzen'] # 
 
 
 # First we import the clean dataset into a Pandas DF
