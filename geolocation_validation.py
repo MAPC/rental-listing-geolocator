@@ -1,17 +1,13 @@
 # coding: utf-8
 import pandas as pd
-import math
 import numpy as np
 import os
 import re
 import requests
 import json
 from scipy.spatial import cKDTree as KDTree
-import multiprocessing
-import requests
-import boto3
-import botocore
-import os, shutil
+import time
+import subprocess
 
 
 # The function opens all the CSV files in a directory, and joins them into a large DF
@@ -129,7 +125,7 @@ def val_to_agg(val):
 
 # Function that queries the MApzen API to find the addresses and their lat/lon values for a given lat/lon
 def mapzen_api(mapzen_df, index):
-    api_key = os.environ['MAPC_mapzen']
+    api_key = MAPC_mapzen
 
     lat = mapzen_pad_mapper.loc[index].latitude
     lon = mapzen_pad_mapper.loc[index].longitude
@@ -171,13 +167,12 @@ def delete_folder_files(folder):
         try:
             if os.path.isfile(file_path):
                 os.unlink(file_path)
-            #elif os.path.isdir(file_path): shutil.rmtree(file_path)
         except Exception as e:
             print(e)
 
 def mapzen_api_keys(mapzen_df, keys):
     indices = mapzen_df.index.sort_values()
-    api_key = os.environ['MAPC_mapzen']
+    api_key = MAPC_mapzen
 
     lat = keys[0]
     lon = keys[1]
@@ -185,7 +180,6 @@ def mapzen_api_keys(mapzen_df, keys):
 
     # GET
     r = requests.get(url).text
-    
     address_dict = json.loads(r)['features'][0]
     if 'housenumber' in address_dict['properties']:
         addr_num = address_dict['properties']['housenumber']
@@ -211,57 +205,47 @@ def mapzen_api_keys(mapzen_df, keys):
         curr_index = 0
     else: 
         curr_index = indices[-1] + 1
-    mapzen_df.loc[curr_index] = [addr_num, base, community, address_dict['geometry']['coordinates'][0],
-                           address_dict['geometry']['coordinates'][1], joint_addresses, confidence]
 
+    mapzen_df.loc[curr_index] = [addr_num, base, community, address_dict['geometry']['coordinates'][0],
+                           address_dict['geometry']['coordinates'][1], joint_addresses, confidence, lat, lon]
     return True
 
+# Selects the latest file by unix date on a directory
+def select_date_file(data_path):
+    files = sorted([f for f in os.listdir(data_path) if f.endswith(".csv") ])
+    filename = sorted(files, key=lambda x: float(float(x[:x.find('_')])))[-1]
+    return filename
 
-# filelist = [ f for f in os.listdir(".") if f.endswith(".bak") ]
-# for f in filelist:
-#     os.remove(f)
+# ENV VARS
+data_path = os.environ['data_path'] #'Data'
+worker_folder = os.environ['worker_folder'] #'Data/worker_data/'
+mapc_path = os.environ['mapc_path'] # 'CSV/mapc/'
+point_path = os.environ['point_path'] # 'Points'
+csv_path = os.environ['csv_path'] # 'CSV'
+worker_proc = os.environ['worker_proc'] # 'Data/worker_processed/'
+output_path = os.environ['output_path'] # 'Data/Output'
+MAPC_mapzen = 'mapzen-znUkgUk'#os.environ['MAPC_mapzen'] # 
 
-s3 = boto3.resource('s3',
-            aws_access_key_id=os.environ['MAPC_access'],
-            aws_secret_access_key=os.environ['MAPC_secret'])
-mapc_bucket = s3.Bucket('rental-listings-data-input')
 
-
-for object in mapc_bucket.objects.all():
-    filename = object.key
-    try:
-        with open(object.key, 'wb') as data:
-            mapc_bucket.download_fileobj(object.key, data)
-    except botocore.exceptions.ClientError as e:
-        if e.response['Error']['Code'] == "404":
-            print("The object does not exist.")
-        else:
-            raise
-
-# # First we import the clean dataset into a Pandas DF
-rental_df = pd.read_csv(filename, index_col=0)
+# First we import the clean dataset into a Pandas DF
+rental_df = pd.read_csv(os.path.join(data_path, select_date_file(data_path)), index_col=0)
 
 # We subset the dataset to get only the padmapper listings
 pad_mapper = rental_df.loc[(rental_df['source_id'] == 2) & (rental_df['longitude']!=0)]
 
-
 # Delete the contents of the directory
-folder = 'Data/worker_data'
-delete_folder_files(folder)
+delete_folder_files(worker_folder)
 
 # Break the data into chunks of 100 listings
 chunk_size = 100
-worker_path = 'Data/worker_data/'
-break_data(pad_mapper, chunk_size, worker_path)
+break_data(pad_mapper, chunk_size, worker_folder)
 
 # Get the names of all the towns within the MAPC
-mapc_path = 'CSV/mapc/MAPC Towns.csv'
-mapc_towns = list(pd.read_csv(mapc_path).municipal)
+mapc_towns = list(pd.read_csv(os.path.join(mapc_path, 'MAPC Towns.csv')).municipal)
 
 
 # Get the geolocations associated with the MAPC
-csv_path = 'Points'
-geolocations = open_selected_csv(csv_path, mapc_towns)
+geolocations = open_selected_csv(point_path, mapc_towns)
 
 
 # Set the index of the geolocations as a column
@@ -300,31 +284,25 @@ cleaned_geolocations = geolocations.drop_duplicates(subset=['joint_addresses', '
 # # street_names_merge = street_names_merge.drop_duplicates()
 
 # Local Copy of all the street names
-street_names_merge = pd.Series.from_csv('CSV/streetnames_merge.csv', index_col=0)
+street_names_merge = pd.Series.from_csv(os.path.join(csv_path, 'streetnames_merge.csv'), index_col=0)
 
-
-# Paths for the files to be read, and the files to be processed
-worker_proc = 'Data/worker_processed/'
-worker_path = 'Data/worker_data/'
 
 # Delete the contents of the directory
 delete_folder_files(worker_proc)
 
 # get the number of files in the directory
-num_of_chunks = [file for file in os.listdir(worker_path) if file.endswith(".csv") ]
+num_of_chunks = [file for file in os.listdir(worker_folder) if file.endswith(".csv") ]
 # loop through all the files to execute the regex functions
 for i in range(len(num_of_chunks)):
-    if i < 2:
-        try:
-            path = worker_path + str(i) + '.csv'
-            output = worker_proc + str(i) + '.csv'
-            worker(path, street_names_merge, strip_address, strip_st_type, regex_st_types, output)
-        except: pass
+    try:
+        path = worker_folder + str(i) + '.csv'
+        output = worker_proc + str(i) + '.csv'
+        worker(path, street_names_merge, strip_address, strip_st_type, regex_st_types, output)
+    except Exception as e:
+        print(e)
 
 # Opens all the processed files, and creaes a larger series
-worker_proc = 'Data/worker_processed/'
 pad_mapper_addr = open_series_csv(worker_proc)
-
 
 # Turns the Series into a DF, and joins them with the lat, lon, and census tract
 pad_mapper_addr_df = pad_mapper_addr.to_frame(name='joint_addresses').join(pad_mapper[['latitude','longitude','tract10']])
@@ -422,19 +400,17 @@ pad_mapper['joint_addresses_merge'] = pad_mapper[['joint_addresses', 'joint_addr
 pad_mapper_clean = pad_mapper.drop(drop_columns, axis=1)
 # Obtain the listings that were not forward or backward geolocated
 mapzen_pad_mapper = pad_mapper_clean[(pad_mapper_clean.fwd_geolocated == False)&(pad_mapper_clean.rev_geolocated==False)]
-
-print pad_mapper_clean
+# print mapzen_pad_mapper
 # Create an empty dataframe to hold the values to be queried from the Mapzen API
 mapzen_df = pd.DataFrame(columns=['ADDR_NUM_mapozen', 'BASE_mapzen', 'COMMUNITY_mapzen', 'latitude', 'longitude', 'joint_addresses_mapzen','mapzen_confidence'])
 
-
 # Iterate through the indices that are left, and geocode them with the mapzen API
 for index in mapzen_pad_mapper.index:
-    print index
+    # print index
     try:
         mapzen_api(mapzen_df, index)
-    except: pass
-
+    except Exception as e:
+        print(e)
 
 # Add flags for the listings that were geocoded with Mapzen
 pad_mapper_clean['mapzen_geolocated'] = False
@@ -517,29 +493,31 @@ grouped_keys = mapzen_grouped.groups.keys()
 
 
 # We create an empty DF to hold the query results
-mapzen_df = pd.DataFrame(columns=['ADDR_NUM', 'BASE', 'COMMUNITY', 'latitude', 'longitude', 'joint_addresses','mapzen_confidence', 'original_latitude', 'original_longitude'])
+mapzen_df_craigslist = pd.DataFrame(columns=['ADDR_NUM', 'BASE', 'COMMUNITY', 'latitude_mapzen', 'longitude_mapzen', 'joint_addresses','mapzen_confidence', 'latitude', 'longitude'])
 
 # # We query the Mapzen API
 for key in grouped_keys:
-    print key
-    try: mapzen_api_keys(mapzen_df, key)
-    except: pass
+    # print key
+    try: mapzen_api_keys(mapzen_df_craigslist, key)
+    except Exception as e:
+        print(e)
 
 # We set the index as a md index based on the lat lon
-mapzen_multi_index = mapzen_df.set_index(['latitude', 'longitude'], drop = False, inplace=False)
+mapzen_multi_index = mapzen_df_craigslist.set_index(['latitude', 'longitude'], drop = False, inplace=False)
 
 # We add the original lat lon as a column, but first we parse them
-lat_lon = [[],[]]
-for i in grouped_keys:
-    lat_lon[0].append(i[0])
-    lat_lon[1].append(i[1])
+# lat_lon = [[],[]]
+# for i in grouped_keys:
+#     lat_lon[0].append(i[0])
+#     lat_lon[1].append(i[1])
 
-mapzen_multi_index_rename = mapzen_multi_index.rename(columns={'latitude': 'latitude_mapzen', 'longitude': 'longitude_mapzen'})
-mapzen_multi_index_rename['latitude'] = lat_lon[0]
-mapzen_multi_index_rename['longitude'] = lat_lon[1]
+# mapzen_multi_index_rename = mapzen_multi_index.rename(columns={'latitude': 'latitude_mapzen', 'longitude': 'longitude_mapzen'})
+
+# mapzen_multi_index_rename['latitude'] = lat_lon[0]
+# mapzen_multi_index_rename['longitude'] = lat_lon[1]
 
 # We merge the table with non duplicate lat lon values with the original craigslist-mapzen dataset
-mapzen_craigslist_merge = pd.merge(mapzen_craigslist, mapzen_multi_index_rename, how='left', on=['latitude', 'longitude'])
+mapzen_craigslist_merge = pd.merge(mapzen_craigslist, mapzen_multi_index, how='left', on=['latitude', 'longitude'])
 
 # We re-assign the indices
 mapzen_craigslist_merge.index = mapzen_craigslist.index
@@ -581,9 +559,13 @@ drop_columns = ['COMMUNITY_y','COMMUNITY',
 craigslist_clean = craigslist_map.drop(drop_columns, axis=1)
 
 # Merge padmapper and craigslist processed listings 
-processed_listings = pd.concat([padmapper_clean, craigslist_clean])
+processed_listings = pd.concat([pad_mapper_clean, craigslist_clean])
 
 #################============================#######################################
-# We finally output it ... and we should upload to S3........
-processed_listings.to_csv(str(datetime.date.today())+'_processed_listings.csv')
+# We finally output it ... 
+processed_listings.to_csv(os.path.join(output_path, repr(time.time()))+'_processed_listings.csv')
+
+
+os.system('python data_analysis.py')
+
 

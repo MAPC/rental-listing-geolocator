@@ -10,6 +10,7 @@ from shapely.geometry import Point
 import datetime as dt
 import glob
 import scipy.stats as st
+import time
 
 
 from scipy.stats import norm
@@ -19,37 +20,13 @@ from matplotlib import gridspec
 from scipy import stats
 
 
-
-
-import s3fs
-import boto
-import boto.s3
-import sys
-from boto.s3.key import Key
-
-
 conf_perc = 0.95
-
-
-bucket_data= 'rental-listings-data-output'
-bucket_analysis= 'rental-listings-analysis-output'
-
-fs = s3fs.S3FileSystem(anon=False,key=os.environ["MAPC_access"],
-    secret=os.environ["MAPC_secret"])
-
-
-conn = boto.connect_s3(os.environ["MAPC_access"],
-        os.environ["MAPC_secret"])
-
-
 
 def percent_cb(complete, total):
     sys.stdout.write('.')
     sys.stdout.flush()
 
 
-charts_path = "{}/charts".format(bucket_analysis)
-output_data_path =  "{}/analysis".format(bucket_analysis)
 
 crs = {'init':'epsg:4326'}
 today_ = dt.date.today()
@@ -83,11 +60,17 @@ file_dict={'neighborhoods':neighborhoods,'zipcodes':zipcodes,'towns':towns,'trac
 
 
 
+# Selects the latest file by unix date on a directory
+def select_date_file(data_path):
+    files = sorted([f for f in os.listdir(data_path) if f.endswith(".csv") ])
+    filename = sorted(files, key=lambda x: float(float(x[:x.find('_')])))[-1]
+    return filename
 
-### Pass along the S3 bucket file TO DO: Figure out S3 file structure
-def data_creation(bucket):
-	data = pd.read_csv(fs.open(fs.ls("rental-listings-data-output/")[0],mode='rb'))
+def data_creation():
+	data_path = os.environ['output_path']
+	raw_data = os.path.join(data_path, select_date_file(data_path))
 
+	data = pd.read_csv(raw_data)
 
 
 	data=data.drop(['uniqueid','Unnamed: 0.1','original_title', 'cl_title', 'created_at','updated_at','tract10',
@@ -140,15 +123,10 @@ def box_plot(data):
 
 	ax.set_xscale('log')
 	plt.title('Median Rent Distribution by Number of Bedrooms for {}/{}/{}'.format(today_.day,today_.month,today_.year))
-	plt.savefig('ask_boxplot.png')
+	chart_path = os.environ['chart_path'] # 'Data/Output/charts'
+	plt.savefig(chart_path+'/{}_ask_boxplot.png'.format(repr(time.time()))))
 	print('Boxplot written')
 	plt.close()
-
-	img_= 'ask_boxplot.png'
-	mybucket = conn.get_bucket(bucket_analysis)
-	k = Key(mybucket)
-	k.key = 'charts/{}_{}_{}_ask_boxplot.png'.format(today_.year,today_.month,today_.day)
-	k.set_contents_from_filename(img_,cb=percent_cb, num_cb=10)
 
 
 ### Time Series
@@ -167,16 +145,10 @@ def time_series_plot(data):
 	plt.legend()
 	plt.tight_layout()
 	plt.title('Median Rent Time Series by Number of Bedrooms for {}/{}/{}'.format(today_.day,today_.month,today_.year))
-	plt.savefig('ask_timeseries.png')
+	chart_path = os.environ['chart_path'] # 'Data/Output/charts'
+	plt.savefig(chart_path+'/{}_ask_timeseries.png'.format(repr(time.time()))))
 	print('Time Series written')
 	plt.close()
-
-
-	img_= 'ask_timeseries.png'
-	mybucket = conn.get_bucket(bucket_analysis)
-	k = Key(mybucket)
-	k.key = 'charts/{}_{}_{}_ask_timeseries.png'.format(today_.year,today_.month,today_.day)
-	k.set_contents_from_filename(img_,cb=percent_cb, num_cb=10)
 
 
 def hist_plot(data): 
@@ -213,14 +185,10 @@ def hist_plot(data):
 	    stats.probplot(ln_ask, dist="norm",plot=ax2)
 
 	plt.tight_layout()
-	plt.savefig('ask_histogram.png')
+	chart_path = os.environ['chart_path'] # 'Data/Output/charts'
+	plt.savefig(chart_path+'/{}_ask_histogram.png'.format(repr(time.time()))))
 	plt.close()
 	print('Time Series written')
-	img_= 'ask_histogram.png'
-	mybucket = conn.get_bucket(bucket_analysis)
-	k = Key(mybucket)
-	k.key = 'charts/{}_{}_{}_ask_histogram.png'.format(today_.year,today_.month,today_.day)
-	k.set_contents_from_filename(img_,cb=percent_cb, num_cb=10)
 
 
 
@@ -236,22 +204,6 @@ def admin_agg_att_group(data,attr_colu = 'ct10_id'):
     data_admin = data.groupby(attr_colu).mean().reset_index()
     data_admin = tracts.merge(cl_tracts_sum[[attr_colu,'ask']],on=admin_name)
     return data_admin
-
-
-'''
-### Now let's create some initial maps
-Here is a map of the postings with the ask prices reflected by the color.
-'''
-def create_2br_map(data):
-	### Census Tracts
-	data_agg= file_dict[admin_type].merge(data_agg[[col_dict[admin_type],'ask']],on=col_dict[admin_type])
-	data_agg_3857 = data_agg.to_crs({'init':'epsg:3857'})
-	ax=data_agg_3857.plot(column='ask',alpha=0.5,scheme='QUANTILES',linewidth=.1,cmap='viridis',figsize=(20,10),legend=True)
-	plt.title('Average 2BR apt price by Census Tract')
-	# plt.savefig('Outputs_charts/prices_joined_{}.svg'.format(today_))
-	plt.savefig('{}/{}_{}_{}_prices_joined.png'.format(charts_outputs,today_.day,today_.month,today_.year)) 
-	# plt.show()
-	plt.close()
 
 
 '''
@@ -292,7 +244,7 @@ def remove_outliers(data,data_agg,admin_type):
 	return data_final
 
 def main():
-	data= data_creation(bucket_data)
+	data= data_creation()
 	data['log_ask']=np.log(data['ask'])
 
 	box_plot(data)
@@ -319,13 +271,9 @@ def main():
 		data_final['CI_L'] = data_final['mean']-z_score*data_final['std']
 		data_final['CI_H'] = data_final['mean']+z_score*data_final['std']
 		print("Confidence intervals created")
-		# data_final = data.groupby(col_dict[admin_type]).mean()
-
-		with fs.open('{}/{}_{}_{}_{}_output.csv'.format(output_data_path,today_.year,today_.month,today_.day,admin_type),'wb') as f:
-			bytes_to_write = data_final.to_csv(header=data_final.columns.values).encode()
-			f.write(bytes_to_write)
-		print("Data output written")
-		del data_byadmin
+		analysis_path = os.environ['analysis_path'] # 'Data/Output/analysis'
+		data_final.to_csv(analysis_path+'/{}_{}_output.csv'.format(repr(time.time())),admin_type))
+	
 
 if __name__ == '__main__':
 	main()
