@@ -297,6 +297,9 @@ for i in range(len(num_of_chunks)):
     try:
         path = worker_folder + str(i) + '.csv'
         output = worker_proc + str(i) + '.csv'
+
+        print output
+        
         worker(path, street_names_merge, strip_address, strip_st_type, regex_st_types, output)
     except Exception as e:
         print(e)
