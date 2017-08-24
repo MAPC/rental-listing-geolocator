@@ -124,7 +124,7 @@ def box_plot(data):
 	ax.set_xscale('log')
 	plt.title('Median Rent Distribution by Number of Bedrooms for {}/{}/{}'.format(today_.day,today_.month,today_.year))
 	chart_path = os.environ['chart_path'] # 'Data/Output/charts'
-	plt.savefig(chart_path+'/{}_ask_boxplot.png'.format(repr(time.time()))))
+	plt.savefig(os.path.join(chart_path, '{}_ask_boxplot.png'.format(repr(time.time()))))
 	print('Boxplot written')
 	plt.close()
 
@@ -146,7 +146,7 @@ def time_series_plot(data):
 	plt.tight_layout()
 	plt.title('Median Rent Time Series by Number of Bedrooms for {}/{}/{}'.format(today_.day,today_.month,today_.year))
 	chart_path = os.environ['chart_path'] # 'Data/Output/charts'
-	plt.savefig(chart_path+'/{}_ask_timeseries.png'.format(repr(time.time()))))
+	plt.savefig(os.path.join(chart_path, '{}_ask_timeseries.png'.format(repr(time.time()))))
 	print('Time Series written')
 	plt.close()
 
@@ -186,7 +186,7 @@ def hist_plot(data):
 
 	plt.tight_layout()
 	chart_path = os.environ['chart_path'] # 'Data/Output/charts'
-	plt.savefig(chart_path+'/{}_ask_histogram.png'.format(repr(time.time()))))
+	plt.savefig(os.path.join(chart_path, '{}_ask_histogram.png'.format(repr(time.time()))))
 	plt.close()
 	print('Time Series written')
 
@@ -272,7 +272,7 @@ def main():
 		data_final['CI_H'] = data_final['mean']+z_score*data_final['std']
 		print("Confidence intervals created")
 		analysis_path = os.environ['analysis_path'] # 'Data/Output/analysis'
-		data_final.to_csv(analysis_path+'/{}_{}_output.csv'.format(repr(time.time())),admin_type))
+		data_final.to_csv(os.join.path(analysis_path, '{}_{}_output.csv'.format(repr(time.time())),admin_type))
 	
 
 if __name__ == '__main__':

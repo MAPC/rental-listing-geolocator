@@ -24,7 +24,7 @@ def open_all_csv(path):
 # Breaks all the data into smaller chunks to process
 def break_data(data, chunk_size, path):
     for g, df in data.groupby(np.arange(len(data)) // chunk_size):
-        df.to_csv(path+str(g)+'.csv')
+        df.to_csv(os.path.join(path, str(g)+'.csv'))
 
 
 # Opens a set of CSVs based on a list of town names of interest
@@ -295,10 +295,8 @@ num_of_chunks = [file for file in os.listdir(worker_folder) if file.endswith(".c
 # loop through all the files to execute the regex functions
 for i in range(len(num_of_chunks)):
     try:
-        path = worker_folder + str(i) + '.csv'
-        output = worker_proc + str(i) + '.csv'
-
-        print output
+        path = os.path.join(worker_folder, str(i) + '.csv')
+        output = os.path.join(worker_proc, str(i) + '.csv')
         
         worker(path, street_names_merge, strip_address, strip_st_type, regex_st_types, output)
     except Exception as e:
