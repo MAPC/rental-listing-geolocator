@@ -229,6 +229,11 @@ worker_proc = os.environ['worker_proc'] # 'Data/worker_processed/'
 output_path = os.environ['output_path'] # 'Data/Output'
 MAPC_mapzen = os.environ['MAPC_mapzen'] # 
 
+# Create the directories used by the workers if they don't already existed
+for worker_dir in [worker_folder, worker_proc]:
+    if not os.path.isdir(worker_dir):
+        os.makedirs(worker_dir)
+
 
 # First we import the clean dataset into a Pandas DF
 rental_df = pd.read_csv(os.path.join(data_path, select_date_file(data_path)), index_col=0)
@@ -296,11 +301,6 @@ delete_folder_files(worker_proc)
 # get the number of files in the directory
 num_of_chunks = [file for file in os.listdir(worker_folder) if file.endswith(".csv") ]
 # loop through all the files to execute the regex functions
-
-# Create the directories used by the workers if they don't already existed
-for worker_dir in [worker_folder, worker_proc]:
-    if not os.path.isdir(worker_dir):
-        os.makedirs(worker_dir)
 
 for i in range(len(num_of_chunks)):
     try:
