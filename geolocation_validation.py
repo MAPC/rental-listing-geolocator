@@ -23,6 +23,9 @@ def open_all_csv(path):
 # Perhaps this needs to be rewritten for S3
 # Breaks all the data into smaller chunks to process
 def break_data(data, chunk_size, path):
+    if not os.path.isdir(path):
+        os.makedirs(path)
+
     for g, df in data.groupby(np.arange(len(data)) // chunk_size):
         df.to_csv(os.path.join(path, str(g)+'.csv'))
 
@@ -293,6 +296,12 @@ delete_folder_files(worker_proc)
 # get the number of files in the directory
 num_of_chunks = [file for file in os.listdir(worker_folder) if file.endswith(".csv") ]
 # loop through all the files to execute the regex functions
+
+# Create the directories used by the workers if they don't already existed
+for worker_dir in [worker_folder, worker_proc]:
+    if not os.path.isdir(worker_dir):
+        os.makedirs(worker_dir)
+
 for i in range(len(num_of_chunks)):
     try:
         path = os.path.join(worker_folder, str(i) + '.csv')
