@@ -1,3 +1,13 @@
+# We must tell the matplotlib backend what display engine
+# to use before we import any other matplotlib module.
+#
+# Since we are running in a Docker container, we must 
+# override the default display value which is X. Since 
+# we don't have an X window server installed in a headless
+# container, it will break the program if not changed.
+import matplotlib
+matplotlib.use('Agg')
+
 import os
 import csv
 import numpy as np
@@ -72,10 +82,20 @@ def data_creation():
 
 	data = pd.read_csv(raw_data)
 
-
-	data=data.drop(['uniqueid','Unnamed: 0.1','original_title', 'cl_title', 'created_at','updated_at','tract10',
+        # Decide which columns our dataset is capable of dropping
+        # Otherwise pandas will throw an error
+        can_drop_columns = ['uniqueid','Unnamed: 0.1','original_title', 'cl_title', 'created_at','updated_at','tract10',
 	                'tract10_fwd_geocode', 'census_tract','rev_geolocated', 'COMMUNITY_Merge', 'ADDR_NUM_merge', 
-	                'BASE_merge','latitude_merge', 'longitude_merge', 'joint_addresses_merge'],axis=1)
+	                'BASE_merge','latitude_merge', 'longitude_merge', 'joint_addresses_merge']
+
+        will_drop_columns = []
+
+        for column_name in can_drop_columns:
+            if column_name in data.columns:
+                will_drop_columns.append(column_name)
+
+
+	data = data.drop(will_drop_columns, axis=1)
 	data = data.rename(columns={'Unnamed: 0': 'unique_id'})
 
 	data['timestamp']=[pd.to_datetime(each) for each in data.post_at]
@@ -272,7 +292,7 @@ def main():
 		data_final['CI_H'] = data_final['mean']+z_score*data_final['std']
 		print("Confidence intervals created")
 		analysis_path = os.environ['analysis_path'] # 'Data/Output/analysis'
-		data_final.to_csv(os.join.path(analysis_path, '{}_{}_output.csv'.format(repr(time.time())),admin_type))
+		data_final.to_csv(os.path.join(analysis_path, '{}_{}_output.csv'.format(repr(time.time()),admin_type)))
 	
 
 if __name__ == '__main__':
