@@ -27,7 +27,7 @@ def break_data(data, chunk_size, path):
         os.makedirs(path)
 
     for g, df in data.groupby(np.arange(len(data)) // chunk_size):
-        df.to_csv(os.path.join(path, str(g)+'.csv'))
+        df.to_csv(os.path.join(path, str(g)+'.csv'), encoding='utf-8')
 
 
 # Opens a set of CSVs based on a list of town names of interest
@@ -105,7 +105,7 @@ def worker(path, street_names_merge, strip_address, strip_st_type, regex_st_type
     pad_mapper_addr = current_df.title.apply(strip_address, args=(street_names_merge,))
     pad_mapper_addr = pad_mapper_addr.apply(strip_st_type, args=(regex_st_types,))
     print 'Processed'
-    pad_mapper_addr.to_csv(output_path)
+    pad_mapper_addr.to_csv(output_path, encoding='utf-8')
     return
 
 
@@ -573,7 +573,7 @@ processed_listings = pd.concat([pad_mapper_clean, craigslist_clean])
 
 #################============================#######################################
 # We finally output it ... 
-processed_listings.to_csv(os.path.join(output_path, repr(time.time()))+'_processed_listings.csv')
+processed_listings.to_csv(os.path.join(output_path, repr(time.time()))+'_processed_listings.csv', encoding='utf-8')
 
 
 os.system('python data_analysis.py')

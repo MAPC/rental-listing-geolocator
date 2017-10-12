@@ -292,7 +292,7 @@ def main():
 		data_final['CI_H'] = data_final['mean']+z_score*data_final['std']
 		print("Confidence intervals created")
 		analysis_path = os.environ['analysis_path'] # 'Data/Output/analysis'
-		data_final.to_csv(os.path.join(analysis_path, '{}_{}_output.csv'.format(repr(time.time()),admin_type)))
+		data_final.to_csv(os.path.join(analysis_path, '{}_{}_output.csv'.format(repr(time.time()),admin_type)), encoding='utf-8')
 	
 
 if __name__ == '__main__':
