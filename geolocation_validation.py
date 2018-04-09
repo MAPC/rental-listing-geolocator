@@ -128,11 +128,9 @@ def val_to_agg(val):
 
 # Function that queries the MApzen API to find the addresses and their lat/lon values for a given lat/lon
 def mapzen_api(mapzen_df, index):
-    api_key = MAPC_mapzen
-
     lat = mapzen_pad_mapper.loc[index].latitude
     lon = mapzen_pad_mapper.loc[index].longitude
-    url = 'http://pelias.mapc.org/v1/reverse?point.lat='+str(lon)+'&point.lon='+str(lat)+'&size=3&api_key=' + api_key
+    url = 'http://pelias.mapc.org/v1/reverse?point.lat='+str(lon)+'&point.lon='+str(lat)+'&size=3'
 
     # GET
     r = requests.get(url).text
@@ -175,11 +173,10 @@ def delete_folder_files(folder):
 
 def mapzen_api_keys(mapzen_df, keys):
     indices = mapzen_df.index.sort_values()
-    api_key = MAPC_mapzen
 
     lat = keys[0]
     lon = keys[1]
-    url = 'https://search.mapzen.com/v1/reverse?point.lat='+str(lon)+'&point.lon='+str(lat)+'&size=3&api_key=' + api_key
+    url = 'https://pelias.mapc.org/v1/reverse?point.lat='+str(lon)+'&point.lon='+str(lat)+'&size=3'
 
     # GET
     r = requests.get(url).text
@@ -227,7 +224,6 @@ point_path = os.environ['point_path'] # 'Points'
 csv_path = os.environ['csv_path'] # 'CSV'
 worker_proc = os.environ['worker_proc'] # 'Data/worker_processed/'
 output_path = os.environ['output_path'] # 'Data/Output'
-MAPC_mapzen = os.environ['MAPC_mapzen'] # 
 
 # Create the directories used by the workers if they don't already existed
 for worker_dir in [worker_folder, worker_proc]:
