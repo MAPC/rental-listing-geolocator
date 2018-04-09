@@ -132,7 +132,7 @@ def mapzen_api(mapzen_df, index):
 
     lat = mapzen_pad_mapper.loc[index].latitude
     lon = mapzen_pad_mapper.loc[index].longitude
-    url = 'https://search.mapzen.com/v1/reverse?point.lat='+str(lon)+'&point.lon='+str(lat)+'&size=3&api_key=' + api_key
+    url = 'http://pelias.mapc.org/v1/reverse?point.lat='+str(lon)+'&point.lon='+str(lat)+'&size=3&api_key=' + api_key
 
     # GET
     r = requests.get(url).text
