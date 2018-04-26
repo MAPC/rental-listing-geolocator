@@ -176,7 +176,7 @@ def mapzen_api_keys(mapzen_df, keys):
 
     lat = keys[0]
     lon = keys[1]
-    url = 'https://pelias.mapc.org/v1/reverse?point.lat='+str(lon)+'&point.lon='+str(lat)+'&size=3'
+    url = 'http://pelias.mapc.org/v1/reverse?point.lat='+str(lon)+'&point.lon='+str(lat)+'&size=3'
 
     # GET
     r = requests.get(url).text
