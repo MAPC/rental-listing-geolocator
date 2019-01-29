@@ -523,7 +523,7 @@ mapzen_multi_index = mapzen_df_craigslist.set_index(['latitude', 'longitude'], d
 # mapzen_multi_index_rename['longitude'] = lat_lon[1]
 
 # We merge the table with non duplicate lat lon values with the original craigslist-mapzen dataset
-mapzen_craigslist_merge = pd.merge(mapzen_craigslist, mapzen_multi_index, how='left', on=['latitude', 'longitude'])
+mapzen_craigslist_merge = pd.merge(mapzen_craigslist, mapzen_multi_index, left_index=True, left_on=['latitude', 'longitude'])
 
 # We re-assign the indices
 mapzen_craigslist_merge.index = mapzen_craigslist.index
