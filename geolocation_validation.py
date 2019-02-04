@@ -176,7 +176,7 @@ def mapzen_api_keys(mapzen_df, keys):
 
     lat = keys[0]
     lon = keys[1]
-    url = 'http://pelias.mapc.org/v1/reverse?point.lat='+str(lon)+'&point.lon='+str(lat)+'&size=3'
+    url = 'https://pelias.mapc.org/v1/reverse?point.lat='+str(lon)+'&point.lon='+str(lat)+'&size=3'
 
     # GET
     r = requests.get(url).text
@@ -508,22 +508,8 @@ for key in grouped_keys:
     except Exception as e:
         print(e)
 
-# We set the index as a md index based on the lat lon
-mapzen_multi_index = mapzen_df_craigslist.set_index(['latitude', 'longitude'], drop = False, inplace=False)
-
-# We add the original lat lon as a column, but first we parse them
-# lat_lon = [[],[]]
-# for i in grouped_keys:
-#     lat_lon[0].append(i[0])
-#     lat_lon[1].append(i[1])
-
-# mapzen_multi_index_rename = mapzen_multi_index.rename(columns={'latitude': 'latitude_mapzen', 'longitude': 'longitude_mapzen'})
-
-# mapzen_multi_index_rename['latitude'] = lat_lon[0]
-# mapzen_multi_index_rename['longitude'] = lat_lon[1]
-
 # We merge the table with non duplicate lat lon values with the original craigslist-mapzen dataset
-mapzen_craigslist_merge = pd.merge(mapzen_craigslist, mapzen_multi_index, left_index=True, left_on=['latitude', 'longitude'])
+mapzen_craigslist_merge = pd.merge(mapzen_craigslist, mapzen_df_craigslist, left_index=True, on=['latitude', 'longitude'])
 
 # We re-assign the indices
 mapzen_craigslist_merge.index = mapzen_craigslist.index
